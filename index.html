@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crop Recommendation System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f0f8ea;
+            padding: 20px;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+        h1 {
+            color: #2c5822;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-label {
+            font-weight: 500;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Crop Recommendation System</h1>
+        <form id="cropForm">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="N_SOIL" class="form-label">Nitrogen Content in Soil</label>
+                    <input type="number" class="form-control" id="N_SOIL" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="P_SOIL" class="form-label">Phosphorus Content in Soil</label>
+                    <input type="number" class="form-control" id="P_SOIL" required>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="K_SOIL" class="form-label">Potassium Content in Soil</label>
+                    <input type="number" class="form-control" id="K_SOIL" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="TEMPERATURE" class="form-label">Temperature (°C)</label>
+                    <input type="number" step="0.01" class="form-control" id="TEMPERATURE" required>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="HUMIDITY" class="form-label">Humidity (%)</label>
+                    <input type="number" step="0.01" class="form-control" id="HUMIDITY" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="ph" class="form-label">pH Level</label>
+                    <input type="number" step="0.01" class="form-control" id="ph" required>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="RAINFALL" class="form-label">Rainfall (mm)</label>
+                    <input type="number" step="0.01" class="form-control" id="RAINFALL" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="STATE" class="form-label">State</label>
+                    <select class="form-control" id="STATE" required>
+                        <option value="">Select State</option>
+                        <option value="Andaman and Nicobar">Andaman and Nicobar</option>
+                        <option value="Andhra Pradesh">Andhra Pradesh</option>
+                        <option value="Assam">Assam</option>
+                        <option value="Chattisgarh">Chattisgarh</option>
+                        <option value="Goa">Goa</option>
+                        <option value="Gujarat">Gujarat</option>
+                        <option value="Haryana">Haryana</option>
+                        <option value="Himachal Pradesh">Himachal Pradesh</option>
+                        <option value="Jammu and Kashmir">Jammu and Kashmir</option>
+                        <option value="Karnataka">Karnataka</option>
+                        <option value="Kerala">Kerala</option>
+                        <option value="Madhya Pradesh">Madhya Pradesh</option>
+                        <option value="Maharashtra">Maharashtra</option>
+                        <option value="Manipur">Manipur</option>
+                        <option value="Meghalaya">Meghalaya</option>
+                        <option value="Nagaland">Nagaland</option>
+                        <option value="Odisha">Odisha</option>
+                        <option value="Pondicherry">Pondicherry</option>
+                        <option value="Punjab">Punjab</option>
+                        <option value="Rajasthan">Rajasthan</option>
+                        <option value="Tamil Nadu">Tamil Nadu</option>
+                        <option value="Telangana">Telangana</option>
+                        <option value="Tripura">Tripura</option>
+                        <option value="Uttar Pradesh">Uttar Pradesh</option>
+                        <option value="Uttrakhand">Uttrakhand</option>
+                        <option value="West Bengal">West Bengal</option>
+                    </select>
+                </div>
+            </div>
+            <div class="text-center">
+                <button type="submit" class="btn btn-success btn-lg">Get Recommendation</button>
+            </div>
+        </form>
+        <div id="result" class="alert alert-success"></div>
+    </div>
+
+    <script>
+        document.getElementById('cropForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = {
+                N_SOIL: parseFloat(document.getElementById('N_SOIL').value),
+                P_SOIL: parseFloat(document.getElementById('P_SOIL').value),
+                K_SOIL: parseFloat(document.getElementById('K_SOIL').value),
+                TEMPERATURE: parseFloat(document.getElementById('TEMPERATURE').value),
+                HUMIDITY: parseFloat(document.getElementById('HUMIDITY').value),
+                ph: parseFloat(document.getElementById('ph').value),
+                RAINFALL: parseFloat(document.getElementById('RAINFALL').value),
+                STATE: document.getElementById('STATE').value
+            };
+
+            try {
+                const response = await fetch('/get-recommendation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+                const resultDiv = document.getElementById('result');
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<strong>Recommended Crop:</strong> ${data.recommended_crop}`;
+            } catch (error) {
+                console.error('Error:', error);
+                const resultDiv = document.getElementById('result');
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'alert alert-danger';
+                resultDiv.textContent = 'An error occurred while getting the recommendation.';
+            }
+        });
+    </script>
+</body>
+</html>
