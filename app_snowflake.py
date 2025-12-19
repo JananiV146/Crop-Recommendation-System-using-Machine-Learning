@@ -4,7 +4,11 @@ import numpy as np
 import pickle
 import os
 from sklearn.preprocessing import LabelEncoder
-from snowflake.snowpark.context import get_active_session
+try:
+    from snowflake.connector import connect
+    SNOWFLAKE_AVAILABLE = True
+except ImportError:
+    SNOWFLAKE_AVAILABLE = False
 
 # Page configuration
 st.set_page_config(page_title="Crop Recommendation System", layout="wide")
@@ -16,25 +20,34 @@ st.markdown("Predict the best crop based on soil and climate conditions")
 # Load trained model and label encoder
 @st.cache_resource
 def load_model():
-    # Option 1: Load from local files (for local testing)
+    # Load from local files
     if os.path.exists('crop_model.pkl') and os.path.exists('label_encode.pkl'):
         model = pickle.load(open('crop_model.pkl', 'rb'))
         label_encoder = pickle.load(open('label_encode.pkl', 'rb'))
         return model, label_encoder
-    
-    # Option 2: Load from Snowflake stage (for production)
-    try:
-        session = get_active_session()
-        # Download model from Snowflake stage
-        session.file.get("@MODEL_STAGE/crop_model.pkl", "./")
-        session.file.get("@MODEL_STAGE/label_encode.pkl", "./")
-        
-        model = pickle.load(open('crop_model.pkl', 'rb'))
-        label_encoder = pickle.load(open('label_encode.pkl', 'rb'))
-        return model, label_encoder
-    except:
+    else:
         st.error("Model files not found. Please train the model first using the notebook.")
         return None, None
+
+@st.cache_resource
+def get_snowflake_connection():
+    """Establish Snowflake connection"""
+    if not SNOWFLAKE_AVAILABLE:
+        return None
+    
+    try:
+        conn = connect(
+            account=st.secrets["snowflake"]["account"],
+            user=st.secrets["snowflake"]["user"],
+            password=st.secrets["snowflake"]["password"],
+            warehouse=st.secrets["snowflake"]["warehouse"],
+            database=st.secrets["snowflake"]["database"],
+            schema=st.secrets["snowflake"]["schema"]
+        )
+        return conn
+    except Exception as e:
+        st.warning(f"Snowflake connection not available: {e}")
+        return None
 
 model, label_encoder = load_model()
 
@@ -143,24 +156,21 @@ if page == "Home":
                 st.dataframe(summary_df, use_container_width=True)
                 
                 # Optional: Log to Snowflake
-                try:
-                    session = get_active_session()
-                    insert_data = {
-                        'STATE': [state],
-                        'NITROGEN': [nitrogen],
-                        'PHOSPHORUS': [phosphorus],
-                        'POTASSIUM': [potassium],
-                        'TEMPERATURE': [temperature],
-                        'HUMIDITY': [humidity],
-                        'PH': [ph],
-                        'RAINFALL': [rainfall],
-                        'PREDICTION': [prediction]
-                    }
-                    prediction_df = pd.DataFrame(insert_data)
-                    session.write_pandas(prediction_df, "PREDICTION_LOGS", auto_create_table=True, overwrite=False)
-                    st.info("Prediction logged to Snowflake database")
-                except:
-                    pass
+                if SNOWFLAKE_AVAILABLE:
+                    try:
+                        conn = get_snowflake_connection()
+                        if conn:
+                            cursor = conn.cursor()
+                            insert_query = f"""
+                            INSERT INTO PREDICTION_LOGS 
+                            (STATE, NITROGEN, PHOSPHORUS, POTASSIUM, TEMPERATURE, HUMIDITY, PH, RAINFALL, PREDICTION)
+                            VALUES ('{state}', {nitrogen}, {phosphorus}, {potassium}, {temperature}, {humidity}, {ph}, {rainfall}, '{prediction}')
+                            """
+                            cursor.execute(insert_query)
+                            conn.commit()
+                            st.info("✅ Prediction logged to Snowflake")
+                    except Exception as e:
+                        st.warning(f"Could not log to Snowflake: {e}")
                 
             except Exception as e:
                 st.error(f"Error in prediction: {str(e)}")
@@ -219,28 +229,43 @@ elif page == "Data Info":
 
 elif page == "Database Stats":
     st.header("Prediction Statistics")
-    try:
-        session = get_active_session()
-        
-        # Query prediction logs from Snowflake
-        query = "SELECT * FROM PREDICTION_LOGS ORDER BY ROW_NUMBER() OVER (ORDER BY CURRENT_TIMESTAMP()) DESC LIMIT 10"
-        logs_df = session.sql(query).to_pandas()
-        
-        st.subheader("Recent Predictions")
-        st.dataframe(logs_df, use_container_width=True)
-        
-        # Statistics
-        col1, col2 = st.columns(2)
-        with col1:
-            total_predictions = session.sql("SELECT COUNT(*) as count FROM PREDICTION_LOGS").collect()[0]['COUNT']
-            st.metric("Total Predictions", total_predictions)
-        
-        with col2:
-            unique_crops = session.sql("SELECT COUNT(DISTINCT PREDICTION) as count FROM PREDICTION_LOGS").collect()[0]['COUNT']
-            st.metric("Unique Crops Predicted", unique_crops)
-            
-    except:
-        st.warning("Snowflake connection not available. Make sure you're deployed on Streamlit Cloud with Snowflake configured.")
+    if SNOWFLAKE_AVAILABLE:
+        try:
+            conn = get_snowflake_connection()
+            if conn:
+                cursor = conn.cursor()
+                
+                # Query recent predictions
+                cursor.execute("SELECT * FROM PREDICTION_LOGS ORDER BY CREATED_AT DESC LIMIT 10")
+                logs = cursor.fetchall()
+                
+                if logs:
+                    st.subheader("Recent Predictions")
+                    logs_df = pd.DataFrame(logs, columns=[desc[0] for desc in cursor.description])
+                    st.dataframe(logs_df, use_container_width=True)
+                    
+                    # Statistics
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        cursor.execute("SELECT COUNT(*) as count FROM PREDICTION_LOGS")
+                        total = cursor.fetchone()[0]
+                        st.metric("Total Predictions", total)
+                    
+                    with col2:
+                        cursor.execute("SELECT COUNT(DISTINCT PREDICTION) as count FROM PREDICTION_LOGS")
+                        crops = cursor.fetchone()[0]
+                        st.metric("Unique Crops Predicted", crops)
+                else:
+                    st.info("No predictions logged yet")
+                
+                conn.close()
+            else:
+                st.warning("Snowflake connection not available")
+        except Exception as e:
+            st.warning(f"Database error: {e}")
+    else:
+        st.warning("Snowflake not available. Install snowflake-connector-python to enable this feature.")
 
 # Footer
 st.divider()
